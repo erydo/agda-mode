@@ -1,0 +1,54 @@
+
+language: node_js
+node_js: stable
+
+os:
+    - linux
+
+env:
+    # dependencies for Atom
+    global:
+        - APM_TEST_PACKAGES="agda-mode language-agda"
+        - ATOM_LINT_WITH_BUNDLED_NODE="true"
+
+    matrix:
+        - AGDA_VERSION=2.5.1
+        - AGDA_VERSION=2.4.2.5
+
+        - ATOM_CHANNEL=stable
+        # - AGDA_VERSION=2.4.2.4
+        # - AGDA_VERSION=2.4.2.3
+        # - AGDA_VERSION=2.4.2.2
+
+
+script:
+    - docker pull banacorn/agda:$AGDA_VERSION
+    - curl -s -O https://raw.githubusercontent.com/atom/ci/master/build-package.sh
+    - chmod u+x build-package.sh
+    - ./build-package.sh
+
+services:
+    - docker
+
+notifications:
+  email:
+    on_success: never
+    on_failure: change
+
+branches:
+  only:
+    - spec
+
+git:
+  depth: 10
+
+sudo: false
+
+addons:
+    apt:
+        packages:
+            # for Atom
+            - build-essential
+            - git
+            - libgnome-keyring-dev
+            - fakeroot
