@@ -5,7 +5,7 @@ import { parseFilepath, parseAgdaResponse } from './parser';
 import Rectifier from './parser/stream/rectifier';
 import { handleAgdaResponse } from './handler';
 import { InvalidExecutablePathError, ProcExecError, AutoExecPathSearchError, AgdaParseError } from './error';
-import { Goal, Normalization, View } from './types';
+import { Goal, Normalization, ComputeMode, View } from './types';
 import Core from './core';
 import * as Action from './view/actions';
 
@@ -60,7 +60,7 @@ export default class Process {
                         if (result) {
                             // normalize version number to valid semver
                             const rawVerNum = result[1];
-                            const semVerNum = _.take((result[1] + '.0.0.0').split('.'), 3).join('.');
+                            const semVerNum = _.take((result[1] + '.0.0.0').replace('-', '.').split('.'), 3).join('.');
                             this.agdaVersion = {
                                 raw: rawVerNum,
                                 sem: semVerNum
@@ -85,26 +85,24 @@ export default class Process {
         let message: string[];
         let type: View.Style;
         let placeholder: string;
-
-        if (error instanceof AutoExecPathSearchError) {
+        if (error.name === 'AutoExecPathSearchError') {
             name = `Automatic executable path searching failed`;
             message = [
-                `searching for: \"${ error.programName }\" in the environment`
+                `searching for: \"${ error['programName'] }\" in the environment`
             ].concat(_.compact(error.message.split('\n')));
             type = View.Style.Warning;
             placeholder = 'please enter the path by manual or change the settings again';
-        } else if (error instanceof InvalidExecutablePathError) {
+        } else if (error.name === 'InvalidExecutablePathError') {
             name = `Invalid executable path`;
-            message = [`Path: ${error.path}`].concat(error.message.split('\n'));
+            message = [`Path: ${error['path']}`].concat(error.message.split('\n'));
             type = View.Style.Error;
             placeholder = 'try another path';
-        } else if (error instanceof ProcExecError) {
+        } else if (error.name === 'ProcExecError') {
             name = `Process execution error`;
             message = error.message.split('\n');
             type = View.Style.Warning;
             placeholder = 'please enter the path by manual or change the settings again';
         }
-
         return this.core.view.query(name, message, type, placeholder, false) // disable input method in the mini editor
             .then(this.validateExecutablePath)
             .then((path) => {
@@ -358,22 +356,24 @@ export default class Process {
         }
     }
 
-    computeNormalForm = (goal?: Goal): (expr: string) => Promise<ChildProcess> => {
-        return (expr) => {
-            if (goal) {
-                return this.sendCommand('NonInteractive', `Cmd_compute False ${goal.index} noRange \"${expr}\"`);
-            } else {
-                return this.sendCommand('None', `Cmd_compute_toplevel False \"${expr}\"`);
+    computeNormalForm = (computeMode: ComputeMode, goal?: Goal): (expr: string) => Promise<ChildProcess> => {
+        if (semver.gte(this.agdaVersion.sem, '2.6.0')) {  // after 2.6
+            return (expr) => {
+                if (goal) {
+                    return this.sendCommand('NonInteractive', `Cmd_compute ${computeMode} ${goal.index} noRange \"${expr}\"`);
+                } else {
+                    return this.sendCommand('None', `Cmd_compute_toplevel ${computeMode} \"${expr}\"`);
+                }
             }
-        }
-    }
+        } else { // prior to 2.6
+            const ignoreAbstract = computeMode === 'DefaultCompute' ? 'False' : 'True';
 
-    computeNormalFormIgnoreAbstract = (goal?: Goal): (expr: string) => Promise<ChildProcess> => {
-        return (expr) => {
-            if (goal) {
-                return this.sendCommand('NonInteractive', `Cmd_compute True ${goal.index} noRange \"${expr}\"`);
-            } else {
-                return this.sendCommand('None', `Cmd_compute_toplevel True \"${expr}\"`);
+            return (expr) => {
+                if (goal) {
+                    return this.sendCommand('NonInteractive', `Cmd_compute ${ignoreAbstract} ${goal.index} noRange \"${expr}\"`);
+                } else {
+                    return this.sendCommand('None', `Cmd_compute_toplevel ${ignoreAbstract} \"${expr}\"`);
+                }
             }
         }
     }
